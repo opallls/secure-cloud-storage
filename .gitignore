@@ -1,0 +1,21 @@
+# Kredensial & secrets — JANGAN PERNAH commit
+credentials/
+*.pem
+*.json
+!package.json
+
+# Tapi kita butuh sebagian file JSON di luar credentials/ (misal manifest), jadi lebih aman spesifik saja:
+credentials/credentials.json
+credentials/token.json
+credentials/auth_config.yaml
+credentials/rsa_private.pem
+credentials/rsa_public.pem
+
+# Data & hasil pengujian lokal
+data/output/*
+__pycache__/
+*.pyc
+
+# Environment
+venv/
+.env
