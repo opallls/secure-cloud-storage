@@ -22,6 +22,7 @@ from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
 SCOPES = ["https://www.googleapis.com/auth/drive.file"]
 TOKEN_PATH = "credentials/token.json"
 CREDENTIALS_PATH = "credentials/credentials.json"
+DEFAULT_FOLDER_NAME = "database_keamanan"
 
 
 def _load_creds_from_streamlit_secrets():
@@ -105,6 +106,45 @@ def get_drive_service():
         creds = _run_local_oauth_flow()
 
     return build("drive", "v3", credentials=creds)
+
+
+def get_or_create_folder(service, folder_name: str, parent_id: str = None) -> str:
+    """
+    Cari folder dengan nama `folder_name` yang sudah dibuat oleh app ini.
+    Kalau belum ada, buat folder baru. Return folder_id.
+
+    PENTING: dengan scope drive.file, app hanya bisa melihat/menggunakan folder
+    yang DIBUAT SENDIRI lewat fungsi ini - folder yang dibuat manual di Drive
+    (lewat browser) TIDAK akan terlihat oleh app, meskipun ID-nya diketahui.
+    """
+    query = (
+        f"name = '{folder_name}' "
+        "and mimeType = 'application/vnd.google-apps.folder' "
+        "and trashed = false"
+    )
+    if parent_id:
+        query += f" and '{parent_id}' in parents"
+
+    results = service.files().list(
+        q=query,
+        fields="files(id, name)",
+        spaces="drive",
+    ).execute()
+
+    folders = results.get("files", [])
+    if folders:
+        return folders[0]["id"]
+
+    # Folder belum ada -> buat baru
+    file_metadata = {
+        "name": folder_name,
+        "mimeType": "application/vnd.google-apps.folder",
+    }
+    if parent_id:
+        file_metadata["parents"] = [parent_id]
+
+    folder = service.files().create(body=file_metadata, fields="id").execute()
+    return folder.get("id")
 
 
 def upload_file(service, data: bytes, filename: str, folder_id: str = None) -> str:
