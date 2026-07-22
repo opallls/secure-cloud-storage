@@ -12,8 +12,7 @@ from datetime import datetime
 from utils import ensure_rsa_keys, compute_sha256
 from encrypt import hybrid_encrypt_bytes
 from decrypt import hybrid_decrypt_file
-from google_drive import get_drive_service, get_or_create_folder, upload_file, DEFAULT_FOLDER_NAME
-# from google_drive import get_drive_service, upload_file, download_file
+from google_drive import get_drive_service, get_or_create_folder, upload_file, download_file, DEFAULT_FOLDER_NAME
 
 PRIVATE_KEY_PATH = "credentials/rsa_private.pem"
 PUBLIC_KEY_PATH = "credentials/rsa_public.pem"
@@ -286,9 +285,8 @@ else:
             progress.progress(65, text="Mengunggah ke Google Drive...")
             service = get_drive_service()
             folder_id = get_or_create_folder(service, DEFAULT_FOLDER_NAME)
-            # file_id = upload_file(service, enc_file, uploaded.name + ".enc")
-            file_id = upload_file(service, ciphertext, "file.enc", folder_id=folder_id)
-            key_id = upload_file(service, enc_key, uploaded.name + ".key.enc")
+            file_id = upload_file(service, enc_file, uploaded.name + ".enc", folder_id=folder_id)
+            key_id = upload_file(service, enc_key, uploaded.name + ".key.enc", folder_id=folder_id)
 
             progress.progress(90, text="Menyimpan manifest...")
             manifest = load_manifest()
