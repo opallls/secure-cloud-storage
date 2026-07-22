@@ -2,12 +2,20 @@
 google_drive.py
 Upload & download file ke/dari Google Drive menggunakan OAuth 2.0.
 Scope: drive.file (least privilege - hanya akses file yang dibuat app ini)
+
+Mendukung dua mode:
+1. LOKAL  - login pertama kali via browser (InstalledAppFlow), token disimpan
+            ke credentials/token.json untuk dipakai ulang.
+2. CLOUD  - (Streamlit Cloud / server headless) tidak ada browser, jadi token
+            diambil dari Streamlit secrets (st.secrets["google_oauth"]["token_json"]),
+            hasil generate token.json secara lokal sebelumnya.
 """
 import os
 import io
+import json
+
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
 
@@ -16,25 +24,76 @@ TOKEN_PATH = "credentials/token.json"
 CREDENTIALS_PATH = "credentials/credentials.json"
 
 
+def _load_creds_from_streamlit_secrets():
+    """
+    Coba ambil credentials dari Streamlit secrets.
+    Return None jika Streamlit tidak tersedia atau secrets belum diset
+    (misalnya saat dijalankan sebagai script biasa di lokal, bukan lewat `streamlit run`).
+    """
+    try:
+        import streamlit as st
+    except ImportError:
+        return None
+
+    try:
+        token_info = json.loads(st.secrets["google_oauth"]["token_json"])
+    except (KeyError, FileNotFoundError):
+        return None
+
+    return Credentials.from_authorized_user_info(token_info, SCOPES)
+
+
+def _load_creds_from_local_file():
+    """Coba ambil credentials dari file token.json lokal. Return None jika tidak ada."""
+    if os.path.exists(TOKEN_PATH):
+        return Credentials.from_authorized_user_file(TOKEN_PATH, SCOPES)
+    return None
+
+
+def _run_local_oauth_flow():
+    """
+    Jalankan flow OAuth interaktif via browser lokal.
+    HANYA bisa berjalan di mesin yang punya browser (laptop/PC),
+    TIDAK bisa dipanggil di server headless seperti Streamlit Cloud.
+    """
+    from google_auth_oauthlib.flow import InstalledAppFlow
+
+    flow = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_PATH, SCOPES)
+    # access_type="offline" + prompt="consent" memastikan refresh_token ikut diberikan
+    creds = flow.run_local_server(port=0, access_type="offline", prompt="consent")
+
+    os.makedirs(os.path.dirname(TOKEN_PATH), exist_ok=True)
+    with open(TOKEN_PATH, "w") as token_file:
+        token_file.write(creds.to_json())
+
+    return creds
+
+
 def get_drive_service():
     """
-    Autentikasi ke Google Drive API.
-    Membuka browser untuk login pertama kali, lalu simpan token untuk dipakai ulang.
+    Autentikasi ke Google Drive API dengan urutan prioritas:
+    1. Streamlit secrets (untuk deployment di Streamlit Cloud - tanpa browser)
+    2. File token.json lokal (untuk development di laptop)
+    3. Jalankan flow OAuth via browser (hanya jika token.json belum ada, lokal saja)
     """
-    creds = None
+    creds = _load_creds_from_streamlit_secrets()
 
-    if os.path.exists(TOKEN_PATH):
-        creds = Credentials.from_authorized_user_file(TOKEN_PATH, SCOPES)
+    if creds is None:
+        creds = _load_creds_from_local_file()
 
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
+    if creds is None:
+        # Tidak ada token sama sekali -> hanya boleh terjadi di lokal.
+        creds = _run_local_oauth_flow()
+    elif not creds.valid:
+        if creds.expired and creds.refresh_token:
             creds.refresh(Request())
+            # Simpan token yang sudah di-refresh, tapi hanya jika sumbernya file lokal
+            # (secrets Streamlit tidak bisa ditulis ulang dari kode).
+            if os.path.exists(TOKEN_PATH):
+                with open(TOKEN_PATH, "w") as token_file:
+                    token_file.write(creds.to_json())
         else:
-            flow = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_PATH, SCOPES)
-            creds = flow.run_local_server(port=0)
-
-        with open(TOKEN_PATH, "w") as token_file:
-            token_file.write(creds.to_json())
+            creds = _run_local_oauth_flow()
 
     return build("drive", "v3", credentials=creds)
 
