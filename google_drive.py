@@ -1,138 +1,19 @@
-"""
-google_drive.py
-Upload & download file ke/dari Google Drive menggunakan OAuth 2.0.
-Scope: drive.file (least privilege - hanya akses file yang dibuat app ini)
-
-Mendukung dua mode:
-1. LOKAL  - login pertama kali via browser (InstalledAppFlow), token disimpan
-            ke credentials/token.json untuk dipakai ulang.
-2. CLOUD  - (Streamlit Cloud / server headless) tidak ada browser, jadi token
-            diambil dari Streamlit secrets (st.secrets["google_oauth"]["token_json"]),
-            hasil generate token.json secara lokal sebelumnya.
-"""
-import os
-import io
-import json
-
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
-
-SCOPES = ["https://www.googleapis.com/auth/drive.file"]
-TOKEN_PATH = "credentials/token.json"
-CREDENTIALS_PATH = "credentials/credentials.json"
-
-
-def _load_creds_from_streamlit_secrets():
-    """
-    Coba ambil credentials dari Streamlit secrets.
-    Return None jika Streamlit tidak tersedia atau secrets belum diset
-    (misalnya saat dijalankan sebagai script biasa di lokal, bukan lewat `streamlit run`).
-    """
-    try:
-        import streamlit as st
-    except ImportError:
-        return None
-
-    try:
-        token_info = json.loads(st.secrets["google_oauth"]["token_json"])
-    except (KeyError, FileNotFoundError):
-        return None
-
-    return Credentials.from_authorized_user_info(token_info, SCOPES)
-
-
-def _load_creds_from_local_file():
-    """Coba ambil credentials dari file token.json lokal. Return None jika tidak ada."""
-    if os.path.exists(TOKEN_PATH):
-        return Credentials.from_authorized_user_file(TOKEN_PATH, SCOPES)
-    return None
-
-
-def _run_local_oauth_flow():
-    """
-    Jalankan flow OAuth interaktif via browser lokal.
-    HANYA bisa berjalan di mesin yang punya browser (laptop/PC),
-    TIDAK bisa dipanggil di server headless seperti Streamlit Cloud.
-    """
-    from google_auth_oauthlib.flow import InstalledAppFlow
-
-    flow = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_PATH, SCOPES)
-    # access_type="offline" + prompt="consent" memastikan refresh_token ikut diberikan
-    creds = flow.run_local_server(port=0, access_type="offline", prompt="consent")
-
-    os.makedirs(os.path.dirname(TOKEN_PATH), exist_ok=True)
-    with open(TOKEN_PATH, "w") as token_file:
-        token_file.write(creds.to_json())
-
-    return creds
-
-
-def get_drive_service():
-    """
-    Autentikasi ke Google Drive API dengan urutan prioritas:
-    1. Streamlit secrets (untuk deployment di Streamlit Cloud - tanpa browser)
-    2. File token.json lokal (untuk development di laptop)
-    3. Jalankan flow OAuth via browser (hanya jika token.json belum ada, lokal saja)
-    """
+ValueError: This app has encountered an error. The original error message is redacted to prevent data leaks. Full error details have been recorded in the logs (if you're on Streamlit Cloud, click on 'Manage app' in the lower right of your app).
+Traceback:
+File "/mount/src/secure-cloud-storage/streamlit_app.py", line 286, in <module>
+    service = get_drive_service()
+File "/mount/src/secure-cloud-storage/google_drive.py", line 79, in get_drive_service
     creds = _load_creds_from_streamlit_secrets()
-
-    if creds is None:
-        creds = _load_creds_from_local_file()
-
-    if creds is None:
-        # Tidak ada token sama sekali -> hanya boleh terjadi di lokal.
-        creds = _run_local_oauth_flow()
-    elif not creds.valid:
-        if creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-            # Simpan token yang sudah di-refresh, tapi hanya jika sumbernya file lokal
-            # (secrets Streamlit tidak bisa ditulis ulang dari kode).
-            if os.path.exists(TOKEN_PATH):
-                with open(TOKEN_PATH, "w") as token_file:
-                    token_file.write(creds.to_json())
-        else:
-            creds = _run_local_oauth_flow()
-
-    return build("drive", "v3", credentials=creds)
-
-
-def upload_file(service, data: bytes, filename: str, folder_id: str = None) -> str:
-    """
-    Upload bytes (ciphertext) ke Google Drive sebagai file.
-    Return: file_id di Google Drive.
-    """
-    file_metadata = {"name": filename}
-    if folder_id:
-        file_metadata["parents"] = [folder_id]
-
-    media = MediaIoBaseUpload(io.BytesIO(data), mimetype="application/octet-stream")
-    uploaded = service.files().create(
-        body=file_metadata,
-        media_body=media,
-        fields="id"
-    ).execute()
-
-    return uploaded.get("id")
-
-
-def download_file(service, file_id: str) -> bytes:
-    """
-    Download file dari Google Drive berdasarkan file_id.
-    Return: isi file sebagai bytes.
-    """
-    request = service.files().get_media(fileId=file_id)
-    buffer = io.BytesIO()
-    downloader = MediaIoBaseDownload(buffer, request)
-
-    done = False
-    while not done:
-        status, done = downloader.next_chunk()
-
-    return buffer.getvalue()
-
-
-def delete_file(service, file_id: str) -> None:
-    """Hapus file dari Google Drive (opsional, untuk cleanup saat testing)."""
-    service.files().delete(fileId=file_id).execute()
+File "/mount/src/secure-cloud-storage/google_drive.py", line 43, in _load_creds_from_streamlit_secrets
+    return Credentials.from_authorized_user_info(token_info, SCOPES)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+File "/home/adminuser/venv/lib/python3.14/site-packages/google/oauth2/credentials.py", line 498, in from_authorized_user_info
+    expiry = datetime.strptime(
+        expiry.rstrip("Z").split(".")[0], "%Y-%m-%dT%H:%M:%S"
+    )
+File "/usr/local/lib/python3.14/_strptime.py", line 815, in _strptime_datetime_datetime
+    tt, fraction, gmtoff_fraction = _strptime(data_string, format)
+                                    ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+File "/usr/local/lib/python3.14/_strptime.py", line 555, in _strptime
+    raise ValueError("time data %r does not match format %r" %
+                     (data_string, format))
